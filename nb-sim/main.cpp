@@ -28,7 +28,7 @@ sem_t* SEM = nullptr;
 constexpr char* SEM_NAME = "/sim_semaphore";
 //SHared Memory
 void* SHM_PTR = nullptr;
-constexpr char* SHM_NAME = "/vector_shared_memory";
+constexpr char* SHM_NAME = "/sim_shm";
 size_t SHM_SIZE = 0;
 
 void* alloc_shm_space();
@@ -36,6 +36,8 @@ void cleanup();
 void signal_handler(int signum);
 double get_user_time_interval();
 
+//Time interval needed
+//Signal from JS to play/pause playback
 struct Metadata {
     size_t object_count;
     std::atomic<size_t> frame;
@@ -53,33 +55,60 @@ struct Metadata {
  * 
  * @return 0 indicating successful execution of the program.
  */
-int main() {
+int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
 
     SEM = sem_open(SEM_NAME, O_CREAT, 0644, 1);
     if (SEM == SEM_FAILED) {
         throw std::runtime_error("Failed to create semaphore");
     }
-
-    double time_interval = get_user_time_interval(); //given by user input
+    double time_interval;
+    if(argc>1){
+        time_interval = std::stod(argv[1]);
+    }
+    else{
+        time_interval = get_user_time_interval();
+    }
     
 
-    MassObject a(10000, {1, 0, 0}, {0, 0, 0}, time_interval);
-    MassObject b(10000, {-1, 0, 0}, {0, 0, 0});
-    MassObject c(10000, {0, 0, 0}, {0, 0, 0});
+    MassObject a(100099900, {10, 10, 0}, {0, 0.01, 0}, time_interval);
+    MassObject b(991009000, {0, 10, 0}, {-0.01, 0, 0});
+    MassObject c(999100000, {5, -10, 0}, {-0.005, 0.01, 0});
+
+//
 
     const size_t object_count = MassObject::objects.size();
     const size_t header_size = sizeof(Metadata) + sizeof(double) * object_count;
     const size_t frame_size = object_count * sizeof(double) * 6;
     SHM_SIZE = header_size + frame_size;
-    SHM_PTR = alloc_shm_space();
+    // SHM_PTR = alloc_shm_space();
+//
+    int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1) {
+        throw std::runtime_error("Failed to create shared memory");
+    }
+
+    if (ftruncate(shm_fd, SHM_SIZE) == -1) {
+        close(shm_fd);
+        shm_unlink(SHM_NAME);
+        throw std::runtime_error("Failed to set size of shared memory");
+    }
+
+    SHM_PTR = mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (SHM_PTR == MAP_FAILED) {
+        close(shm_fd);
+        shm_unlink(SHM_NAME);
+        throw std::runtime_error("Failed to map shared memory");
+    }
+//
+
 
     std::cout << "Shared memory created and mapped successfully." << std::endl;
 
 
     //Memory Structure Begins Here
     Metadata* metadata = static_cast<Metadata*>(SHM_PTR);
-              metadata->object_count = object_count;
+              metadata->object_count = MassObject::objects.size();
               metadata->frame = 1;
 
     double* data_ptr = reinterpret_cast<double*>(reinterpret_cast<uint8_t*>(SHM_PTR) + header_size);
@@ -92,9 +121,10 @@ int main() {
     
     //Begin Simulation Code
 
-    print_object_state_all();
+    // print_object_state_all();
+    size_t lastshown = 0;
     while(true) {
-        std::cout << "Frame: " << metadata->frame << std:: endl;
+        // std::cout << "Seconds Elapsed: " << metadata->frame * time_interval << std::endl;
         run_one_frame();
         sem_wait(SEM);
         ++metadata->frame;
@@ -103,7 +133,11 @@ int main() {
             memcpy(reinterpret_cast<uint8_t*>(data_ptr) + i * 6 * sizeof(double) + 3 * sizeof(double), MassObject::objects[i].velocity.data(), 3 * sizeof(double));
         }
         sem_post(SEM);
-        print_object_state_all();
+        if(metadata->frame % 10000 == 0){
+            std::cout << "Frame: " << metadata->frame << ", Seconds Elapsed:" << metadata->frame * time_interval <<std:: endl;
+            print_object_state_all();   
+            
+        }
     }
 
     cleanup();

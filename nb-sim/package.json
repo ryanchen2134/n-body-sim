@@ -10,8 +10,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "express": "^4.19.2",
     "ffi-napi": "^4.0.3",
+    "http-server": "^14.1.1",
+    "opener": "^1.5.2",
     "posix-semaphore": "^1.0.1",
-    "ref-napi": "^3.0.3"
+    "ref-napi": "^3.0.3",
+    "ws": "^8.18.0"
   }
 }
