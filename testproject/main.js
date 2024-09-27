@@ -1,4 +1,4 @@
-//npm run dev
+//npm run dev - need different server
 
 import './style.css'
 import * as THREE from 'three';
